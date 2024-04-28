@@ -191,6 +191,26 @@ impl<'a> ExprVisitor<Result<()>> for Resolver<'a> {
         self.resolve_expr(object)
     }
 
+    fn visit_super(&mut self, keyword: &Token, method: &Token) -> Result<()> {
+        match self.current_class {
+            ClassType::None => Err(Error::ResolveError(
+                keyword.clone(),
+                "Cannot use 'super' outside of a class.".to_string(),
+            )),
+            ClassType::Class => Err(Error::ResolveError(
+                keyword.clone(),
+                "Cannot use 'super' in a class with no superclass.".to_string(),
+            )),
+            ClassType::SubClass => {
+                let expr = Expr::Super {
+                    keyword: keyword.clone(),
+                    method: method.clone(),
+                };
+                self.resolve_local(expr, keyword)
+            }
+        }
+    }
+
     fn visit_this(&mut self, keyword: &Token) -> Result<()> {
         if self.current_class == ClassType::None {
             return Err(Error::ResolveError(
@@ -288,12 +308,40 @@ impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
         self.resolve_expr(v)
     }
 
-    fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> Result<()> {
+    fn visit_class_stmt(
+        &mut self,
+        name: &Token,
+        super_class: &Option<Expr>,
+        methods: &[Stmt],
+    ) -> Result<()> {
         let enclosing_class = self.current_class;
         self.current_class = ClassType::Class;
 
         self.declare(name)?;
         self.define(name);
+
+        if let Some(ext_super_class) = super_class {
+            if let Expr::Variable {
+                name: var_super_class,
+            } = ext_super_class
+            {
+                if name.lexeme == var_super_class.lexeme {
+                    return Err(Error::ResolveError(
+                        var_super_class.clone(),
+                        String::from("A class cannot inherit from itself."),
+                    ));
+                }
+            }
+            self.current_class = ClassType::SubClass;
+            self.resolve_expr(ext_super_class)?
+        }
+
+        if super_class.is_some() {
+            self.begin_scope();
+            let mut scope = self.scopes.pop().unwrap();
+            scope.insert("super".to_string(), true);
+            self.scopes.push(scope);
+        }
 
         self.begin_scope();
         let mut scope = self.scopes.pop().unwrap();
@@ -319,6 +367,10 @@ impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
         }
 
         self.end_scope();
+
+        if super_class.is_some() {
+            self.end_scope();
+        }
 
         self.current_class = enclosing_class;
         Ok(())

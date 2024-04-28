@@ -14,7 +14,8 @@ pub trait Visitor<T> {
     fn visit_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> T;
     fn visit_function_stmt(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> T;
     fn visit_return_stmt(&mut self, keyword: &Token, value: &Expr) -> T;
-    fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> T;
+    fn visit_class_stmt(&mut self, name: &Token, super_class: &Option<Expr>, methods: &[Stmt])
+        -> T;
 }
 
 pub trait Acceptor<T> {
@@ -48,7 +49,7 @@ pub enum Stmt {
     Class {
         name: Token,
         // Note: only for Stmt::Variable
-        //super_class: Option<Expr>,
+        super_class: Option<Expr>,
         // Note: only for Stmt::Funtion
         methods: Vec<Stmt>,
     },
@@ -82,9 +83,9 @@ impl<T> Acceptor<T> for Stmt {
             Stmt::Return { keyword, value } => visitor.visit_return_stmt(keyword, value),
             Stmt::Class {
                 name,
-                //super_class,
+                super_class,
                 methods,
-            } => visitor.visit_class_stmt(name, methods),
+            } => visitor.visit_class_stmt(name, super_class, methods),
         }
     }
 }

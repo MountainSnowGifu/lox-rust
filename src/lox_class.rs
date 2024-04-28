@@ -8,18 +8,33 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub struct LoxClass {
     pub name: String,
+    super_class: Option<Box<LoxClass>>,
     methods: HashMap<String, LoxFunction>,
 }
 
 impl LoxClass {
-    pub fn new(name: String, methods: HashMap<String, LoxFunction>) -> LoxClass {
-        LoxClass { name, methods }
+    pub fn new(
+        name: String,
+        super_class: Option<Box<LoxClass>>,
+        methods: HashMap<String, LoxFunction>,
+    ) -> LoxClass {
+        LoxClass {
+            name,
+            super_class,
+            methods,
+        }
     }
 
     pub fn find_method(&self, name: String) -> Option<&LoxFunction> {
         if let Some(m) = self.methods.get(&name) {
             return Some(m);
         }
+
+        let LoxClass { super_class, .. } = self;
+        if let Some(ext_super_class) = super_class {
+            return ext_super_class.find_method(name);
+        }
+
         None
     }
 }
@@ -54,5 +69,5 @@ impl fmt::Display for LoxClass {
 pub enum ClassType {
     None,
     Class,
-    //SubClass,
+    SubClass,
 }

@@ -382,6 +382,43 @@ impl expr::Visitor<Result<Object>> for Interpreter {
         }
     }
 
+    fn visit_super(&mut self, keyword: &Token, method: &Token) -> Result<Object> {
+        let distance = self
+            .locals
+            .get(&Expr::Super {
+                keyword: keyword.clone(),
+                method: method.clone(),
+            })
+            .expect(&format!("super found on locals: {:?}", self.locals));
+        let object_super = self
+            .environment
+            .borrow()
+            .get_at(distance.clone(), "super".to_string())?;
+        if let Object::Class(superclass) = object_super {
+            let this = self
+                .environment
+                .borrow()
+                .get_at(distance - 1, "this".to_string())?;
+            if let Object::Instance(object) = this {
+                if let Some(method) = superclass.find_method(method.lexeme.clone()) {
+                    return Ok(Object::Func(method.bind(object)));
+                }
+                return Err(Error::RuntimeError(
+                    method.clone(),
+                    format!("Undefined propertiesperty '{}' '.", method.lexeme),
+                ));
+            }
+            return Err(Error::RuntimeError(
+                method.clone(),
+                format!("'this' should be instance but actually: {}'.", this),
+            ));
+        }
+        Err(Error::RuntimeError(
+            method.clone(),
+            format!("'super' should be class but actually: {}'.", object_super),
+        ))
+    }
+
     fn visit_this(&mut self, keyword: &Token) -> Result<Object> {
         let expr = Expr::This {
             keyword: keyword.clone(),
@@ -479,10 +516,44 @@ impl stmt::Visitor<Result<()>> for Interpreter {
         Err(Error::Return(evaluated_value))
     }
 
-    fn visit_class_stmt(&mut self, name: &Token, class_methods: &[Stmt]) -> Result<()> {
+    fn visit_class_stmt(
+        &mut self,
+        name: &Token,
+        super_class: &Option<Expr>,
+        class_methods: &[Stmt],
+    ) -> Result<()> {
+        let evaluated_super_class = match super_class {
+            Some(sc) => match self.evaluate(sc)? {
+                Object::Class(lc) => Some(Box::new(lc)),
+                _ => {
+                    if let Expr::Variable { name: scname } = sc {
+                        return Err(Error::RuntimeError(
+                            scname.clone(),
+                            "Superclass must be a class.".to_string(),
+                        ));
+                    }
+                    unreachable!()
+                }
+            },
+            None => None,
+        };
+
         self.environment
             .borrow_mut()
             .define(name.lexeme.clone(), &Object::Literal(Literal::None));
+
+        if super_class.is_some() {
+            let new_env = Environment::new(Some(Rc::clone(&self.environment)));
+            self.environment = Rc::new(RefCell::new(new_env));
+            self.environment.borrow_mut().define(
+                "super".to_string(),
+                &Object::Class(
+                    *evaluated_super_class
+                        .clone()
+                        .expect("superclass does not exist."),
+                ),
+            );
+        }
 
         let mut methods: HashMap<String, LoxFunction> = HashMap::new();
         for method in class_methods {
@@ -505,7 +576,17 @@ impl stmt::Visitor<Result<()>> for Interpreter {
             }
         }
 
-        let klass = LoxClass::new(name.lexeme.clone(), methods);
+        let klass = LoxClass::new(name.lexeme.clone(), evaluated_super_class.clone(), methods);
+
+        if evaluated_super_class.is_some() {
+            let enclosing = self
+                .environment
+                .borrow()
+                .enclosing
+                .clone()
+                .expect("doesn't have enclosing");
+            self.environment = enclosing;
+        }
 
         self.environment
             .borrow_mut()

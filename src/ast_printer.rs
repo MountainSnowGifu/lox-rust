@@ -81,6 +81,10 @@ impl ExprVisitor<String> for AstPrinter {
     fn visit_this(&mut self, keyword: &Token) -> String {
         todo!()
     }
+
+    fn visit_super(&mut self, keyword: &Token, method: &Token) -> String {
+        todo!()
+    }
 }
 
 impl StmtVisitor<String> for AstPrinter {
@@ -124,7 +128,12 @@ impl StmtVisitor<String> for AstPrinter {
         todo!()
     }
 
-    fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> String {
+    fn visit_class_stmt(
+        &mut self,
+        name: &Token,
+        super_class: &Option<Expr>,
+        methods: &[Stmt],
+    ) -> String {
         todo!()
     }
 }
